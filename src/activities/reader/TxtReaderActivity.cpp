@@ -24,7 +24,6 @@ constexpr uint32_t CACHE_MAGIC = 0x54585449;  // "TXTI"
 constexpr uint8_t CACHE_VERSION = 2;          // Increment when cache format changes
 }  // namespace
 
-
 void TxtReaderActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
 
