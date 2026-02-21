@@ -193,7 +193,7 @@ void EpubReaderActivity::loop() {
   }
 
   // When long-press chapter skip is disabled, turn pages on press instead of release.
-  const bool usePressForPageTurn = !SETTINGS.longPressChapterSkip;
+  const bool usePressForPageTurn = SETTINGS.longPressButtonBehavior == SETTINGS.OFF; 
   const bool prevTriggered = usePressForPageTurn ? (mappedInput.wasPressed(MappedInputManager::Button::PageBack) ||
                                                     mappedInput.wasPressed(MappedInputManager::Button::Left))
                                                  : (mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
@@ -218,9 +218,9 @@ void EpubReaderActivity::loop() {
     return;
   }
 
-  const bool skipChapter = SETTINGS.longPressChapterSkip && mappedInput.getHeldTime() > skipChapterMs;
+  const bool longPress = !usePressForPageTurn && mappedInput.getHeldTime() > skipChapterMs;
 
-  if (skipChapter) {
+  if (longPress && SETTINGS.longPressButtonBehavior == SETTINGS.CHAPTER_SKIP) {
     // We don't want to delete the section mid-render, so grab the semaphore
     {
       RenderLock lock(*this);
@@ -231,6 +231,16 @@ void EpubReaderActivity::loop() {
     requestUpdate();
     return;
   }
+
+  if (longPress && SETTINGS.longPressButtonBehavior == SETTINGS.ORIENTATION_CHANGE) {
+    const uint8_t newOrientation = nextTriggered
+        ? (SETTINGS.orientation - 1 + SETTINGS.ORIENTATION_COUNT) % SETTINGS.ORIENTATION_COUNT 
+        : (SETTINGS.orientation + 1) % SETTINGS.ORIENTATION_COUNT;
+    applyOrientation(newOrientation);
+    requestUpdate();
+    return;
+  }
+
 
   // No current section, attempt to rerender the book
   if (!section) {

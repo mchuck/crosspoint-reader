@@ -122,7 +122,7 @@ uint8_t CrossPointSettings::writeSettings(FsFile& file, bool count_only) const {
   writer.writeItemString(file, opdsServerUrl);
   writer.writeItem(file, textAntiAliasing);
   writer.writeItem(file, hideBatteryPercentage);
-  writer.writeItem(file, longPressChapterSkip);
+  writer.writeItem(file, longPressButtonBehavior);
   writer.writeItem(file, hyphenationEnabled);
   writer.writeItemString(file, opdsUsername);
   writer.writeItemString(file, opdsPassword);
@@ -226,7 +226,7 @@ bool CrossPointSettings::loadFromFile() {
     if (++settingsRead >= fileSettingsCount) break;
     readAndValidate(inputFile, hideBatteryPercentage, HIDE_BATTERY_PERCENTAGE_COUNT);
     if (++settingsRead >= fileSettingsCount) break;
-    serialization::readPod(inputFile, longPressChapterSkip);
+    readAndValidate(inputFile, longPressButtonBehavior, LONG_PRESS_BUTTON_BEHAVIOR_COUNT);
     if (++settingsRead >= fileSettingsCount) break;
     serialization::readPod(inputFile, hyphenationEnabled);
     if (++settingsRead >= fileSettingsCount) break;

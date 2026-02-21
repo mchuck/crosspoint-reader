@@ -24,6 +24,7 @@ constexpr uint32_t CACHE_MAGIC = 0x54585449;  // "TXTI"
 constexpr uint8_t CACHE_VERSION = 2;          // Increment when cache format changes
 }  // namespace
 
+
 void TxtReaderActivity::onEnter() {
   ActivityWithSubactivity::onEnter();
 
@@ -94,7 +95,7 @@ void TxtReaderActivity::loop() {
   }
 
   // When long-press chapter skip is disabled, turn pages on press instead of release.
-  const bool usePressForPageTurn = !SETTINGS.longPressChapterSkip;
+  const bool usePressForPageTurn = SETTINGS.longPressButtonBehavior == SETTINGS.OFF;
   const bool prevTriggered = usePressForPageTurn ? (mappedInput.wasPressed(MappedInputManager::Button::PageBack) ||
                                                     mappedInput.wasPressed(MappedInputManager::Button::Left))
                                                  : (mappedInput.wasReleased(MappedInputManager::Button::PageBack) ||
