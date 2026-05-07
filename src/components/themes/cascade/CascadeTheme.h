@@ -5,6 +5,8 @@
 namespace CascadeMetrics {
 constexpr ThemeMetrics values = [] {
   ThemeMetrics v = LyraMetrics::values;
+  v.topPadding = 0;
+  v.homeTopPadding = 70;
   v.homeCoverHeight = 340;
   v.homeCoverTileHeight = 400;
   v.homeRecentBooksCount = 5;
