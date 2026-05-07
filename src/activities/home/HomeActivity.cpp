@@ -21,6 +21,12 @@
 #include "fontIds.h"
 
 int HomeActivity::getMenuItemCount() const {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  if (metrics.homeCarouselMode) {
+    int count = 5;  // Continue Reading + File Browser + Recents + File Transfer + Settings
+    if (hasOpdsServers) count++;
+    return count;
+  }
   int count = 4;  // File Browser, Recents, File transfer, Settings
   if (!recentBooks.empty()) {
     count += recentBooks.size();
@@ -114,6 +120,8 @@ void HomeActivity::onEnter() {
   hasOpdsServers = OPDS_STORE.hasServers();
 
   selectorIndex = 0;
+  carouselIndex = 0;
+  menuSelectorIndex = 0;
 
   const auto& metrics = UITheme::getInstance().getMetrics();
   loadRecentBooks(metrics.homeRecentBooksCount);
@@ -172,40 +180,95 @@ void HomeActivity::freeCoverBuffer() {
 }
 
 void HomeActivity::loop() {
-  const int menuCount = getMenuItemCount();
+  const auto& metrics = UITheme::getInstance().getMetrics();
 
-  buttonNavigator.onNext([this, menuCount] {
-    selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
-    requestUpdate();
-  });
+  if (metrics.homeCarouselMode) {
+    if (mappedInput.wasReleased(MappedInputManager::Button::Down)) {
+      if (!recentBooks.empty()) {
+        carouselIndex = (carouselIndex + 1) % static_cast<int>(recentBooks.size());
+        coverRendered = false;
+        freeCoverBuffer();
+      }
+      requestUpdate();
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Up)) {
+      if (!recentBooks.empty()) {
+        carouselIndex = (carouselIndex - 1 + static_cast<int>(recentBooks.size())) %
+                        static_cast<int>(recentBooks.size());
+        coverRendered = false;
+        freeCoverBuffer();
+      }
+      requestUpdate();
+    }
 
-  buttonNavigator.onPrevious([this, menuCount] {
-    selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
-    requestUpdate();
-  });
+    const int menuCount = getMenuItemCount();
+    if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
+      menuSelectorIndex = ButtonNavigator::nextIndex(menuSelectorIndex, menuCount);
+      requestUpdate();
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
+      menuSelectorIndex = ButtonNavigator::previousIndex(menuSelectorIndex, menuCount);
+      requestUpdate();
+    }
 
-  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-    // Calculate dynamic indices based on which options are available
-    int idx = 0;
-    int menuSelectedIndex = selectorIndex - static_cast<int>(recentBooks.size());
-    const int fileBrowserIdx = idx++;
-    const int recentsIdx = idx++;
-    const int opdsLibraryIdx = hasOpdsServers ? idx++ : -1;
-    const int fileTransferIdx = idx++;
-    const int settingsIdx = idx;
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      int idx = 0;
+      const int continueReadingIdx = idx++;
+      const int fileBrowserIdx = idx++;
+      const int recentsIdx = idx++;
+      const int opdsLibraryIdx = hasOpdsServers ? idx++ : -1;
+      const int fileTransferIdx = idx++;
+      const int settingsIdx = idx;
 
-    if (selectorIndex < recentBooks.size()) {
-      onSelectBook(recentBooks[selectorIndex].path);
-    } else if (menuSelectedIndex == fileBrowserIdx) {
-      onFileBrowserOpen();
-    } else if (menuSelectedIndex == recentsIdx) {
-      onRecentsOpen();
-    } else if (menuSelectedIndex == opdsLibraryIdx) {
-      onOpdsBrowserOpen();
-    } else if (menuSelectedIndex == fileTransferIdx) {
-      onFileTransferOpen();
-    } else if (menuSelectedIndex == settingsIdx) {
-      onSettingsOpen();
+      if (menuSelectorIndex == continueReadingIdx && !recentBooks.empty()) {
+        onSelectBook(recentBooks[carouselIndex].path);
+      } else if (menuSelectorIndex == fileBrowserIdx) {
+        onFileBrowserOpen();
+      } else if (menuSelectorIndex == recentsIdx) {
+        onRecentsOpen();
+      } else if (menuSelectorIndex == opdsLibraryIdx) {
+        onOpdsBrowserOpen();
+      } else if (menuSelectorIndex == fileTransferIdx) {
+        onFileTransferOpen();
+      } else if (menuSelectorIndex == settingsIdx) {
+        onSettingsOpen();
+      }
+    }
+  } else {
+    const int menuCount = getMenuItemCount();
+
+    buttonNavigator.onNext([this, menuCount] {
+      selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
+      requestUpdate();
+    });
+
+    buttonNavigator.onPrevious([this, menuCount] {
+      selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
+      requestUpdate();
+    });
+
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      int idx = 0;
+      int menuSelectedIndex = selectorIndex - static_cast<int>(recentBooks.size());
+      const int fileBrowserIdx = idx++;
+      const int recentsIdx = idx++;
+      const int opdsLibraryIdx = hasOpdsServers ? idx++ : -1;
+      const int fileTransferIdx = idx++;
+      const int settingsIdx = idx;
+
+      if (selectorIndex < static_cast<int>(recentBooks.size())) {
+        onSelectBook(recentBooks[selectorIndex].path);
+      } else if (menuSelectedIndex == fileBrowserIdx) {
+        onFileBrowserOpen();
+      } else if (menuSelectedIndex == recentsIdx) {
+        onRecentsOpen();
+      } else if (menuSelectedIndex == opdsLibraryIdx) {
+        onOpdsBrowserOpen();
+      } else if (menuSelectedIndex == fileTransferIdx) {
+        onFileTransferOpen();
+      } else if (menuSelectedIndex == settingsIdx) {
+        onSettingsOpen();
+      }
     }
   }
 }
@@ -221,8 +284,9 @@ void HomeActivity::render(RenderLock&&) {
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.homeTopPadding},
                  metrics.homeContinueReadingInMenu && !recentBooks.empty() ? recentBooks[0].title.c_str() : nullptr);
 
+  const int coverSelector = metrics.homeCarouselMode ? carouselIndex : selectorIndex;
   GUI.drawRecentBookCover(renderer, Rect{0, metrics.homeTopPadding, pageWidth, metrics.homeCoverTileHeight},
-                          recentBooks, selectorIndex, coverRendered, coverBufferStored, bufferRestored,
+                          recentBooks, coverSelector, coverRendered, coverBufferStored, bufferRestored,
                           std::bind(&HomeActivity::storeCoverBuffer, this));
 
   // Build menu items dynamically
@@ -235,10 +299,18 @@ void HomeActivity::render(RenderLock&&) {
     menuIcons.insert(menuIcons.begin() + 2, Library);
   }
 
-  if (metrics.homeContinueReadingInMenu) {
-    // Insert Continue Reading at the top if enabled in theme
+  if (metrics.homeCarouselMode || metrics.homeContinueReadingInMenu) {
     menuItems.insert(menuItems.begin(), tr(STR_CONTINUE_READING));
     menuIcons.insert(menuIcons.begin(), Book);
+  }
+
+  int menuSelector;
+  if (metrics.homeCarouselMode) {
+    menuSelector = menuSelectorIndex;
+  } else if (metrics.homeContinueReadingInMenu) {
+    menuSelector = selectorIndex;
+  } else {
+    menuSelector = selectorIndex - static_cast<int>(recentBooks.size());
   }
 
   GUI.drawButtonMenu(
@@ -246,8 +318,7 @@ void HomeActivity::render(RenderLock&&) {
       Rect{0, metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset, pageWidth,
            pageHeight - (metrics.headerHeight + metrics.homeTopPadding + metrics.verticalSpacing +
                          metrics.homeMenuTopOffset + metrics.buttonHintsHeight)},
-      static_cast<int>(menuItems.size()),
-      metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - recentBooks.size(),
+      static_cast<int>(menuItems.size()), menuSelector,
       [&menuItems](int index) { return std::string(menuItems[index]); },
       [&menuIcons](int index) { return menuIcons[index]; });
 
