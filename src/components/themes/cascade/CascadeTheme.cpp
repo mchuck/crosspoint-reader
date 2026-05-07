@@ -57,17 +57,14 @@ SlotGeom slotGeom(int offset, int centerX, int bmpW, int bmpH, int actualCenterW
     g.w = (bmpW > 0 && bmpH > 0) ? g.h * bmpW / bmpH : g.h * 10 / 14;
     g.y = rectY + (actualCenterH - g.h) / 2 + (absOffset == 1 ? 14 : 30);
 
-    // Pixels the side cover overlaps behind the cover in front of it.
-    constexpr int kOverlap = 150;
+    // kGap: distance from center cover's near edge to each side cover's near edge.
+    // ±1 near edge is kGap from center's near edge; ±2 near edge is 2*kGap from center's near edge.
+    constexpr int kGap = 80;
 
-    if (absOffset == 1) {
-      g.x = centerX + (offset > 0 ? halfCenter - kOverlap : -(halfCenter - kOverlap + g.w));
+    if (offset > 0) {
+      g.x = centerX - halfCenter + absOffset * kGap;
     } else {
-      // ±2: approximate ±1 width using the ±2 book's own AR at 90% height.
-      const int pm1H = actualCenterH * 90 / 100;
-      const int pm1W = (bmpW > 0 && bmpH > 0) ? pm1H * bmpW / bmpH : pm1H * 10 / 14;
-      g.x = centerX + (offset > 0 ? halfCenter - kOverlap + pm1W - kOverlap
-                                   : -(halfCenter - kOverlap + pm1W - kOverlap + g.w));
+      g.x = centerX + halfCenter - absOffset * kGap - g.w;
     }
   }
   return g;
@@ -160,6 +157,12 @@ void drawSlotBitmap(GfxRenderer& renderer, Bitmap& bitmap, const SlotGeom& g, in
   }
 
   free(bitmapData);
+
+  // Border: outline the 4 edges of the perspective quad
+  renderer.drawLine(innerX, g.y, outerX, outerTop);
+  renderer.drawLine(outerX, outerTop, outerX, outerBot);
+  renderer.drawLine(outerX, outerBot, innerX, g.y + g.h);
+  renderer.drawLine(innerX, g.y, innerX, g.y + g.h);
 }
 
 const uint8_t* iconForUIIcon(UIIcon icon) {
@@ -188,7 +191,7 @@ void CascadeTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect,
                                        bool& coverRendered, bool& coverBufferStored, bool& bufferRestored,
                                        std::function<bool()> storeCoverBuffer) const {
   const int screenW = renderer.getScreenWidth();
-  const int centerW = std::min(screenW / 2, 230);
+  const int centerW = std::min(screenW / 2, 260);
   const int centerX = rect.x + rect.width / 2;
 
   // Pre-scan center cover to determine actual rendered dimensions for side slot positioning.
@@ -266,6 +269,20 @@ void CascadeTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect,
         // Render center at native resolution — drawBitmap downscales to fit g.w×g.h when needed,
         // and renders at native size when bitmap is smaller (typical portrait cover).
         renderer.drawBitmap(bitmap, g.x, g.y, g.w, g.h);
+
+        // Rounded corners: mask pixels outside the arc with white, then draw the border.
+        constexpr int r = 6;
+        for (int dy = 0; dy < r; dy++) {
+          for (int dx = 0; dx < r; dx++) {
+            if ((r - dx) * (r - dx) + (r - dy) * (r - dy) > r * r) {
+              renderer.drawPixel(g.x + dx, g.y + dy, false);
+              renderer.drawPixel(g.x + g.w - 1 - dx, g.y + dy, false);
+              renderer.drawPixel(g.x + dx, g.y + g.h - 1 - dy, false);
+              renderer.drawPixel(g.x + g.w - 1 - dx, g.y + g.h - 1 - dy, false);
+            }
+          }
+        }
+        renderer.drawRoundedRect(g.x, g.y, g.w, g.h, 1, r, true);
       } else {
         const int absOffset = offset < 0 ? -offset : offset;
         const int verticalTaper = absOffset == 1 ? g.h / 5 : g.h / 3;
@@ -280,7 +297,7 @@ void CascadeTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect,
   }
 
   // Title below carousel (up to 2 lines, centred)
-  const int titleTopY = rect.y + rect.height + 8;
+  const int titleTopY = rect.y + actualCenterH + 20;
   const int titleMaxWidth = rect.width - 2 * CascadeMetrics::values.contentSidePadding;
   const RecentBook& centered = recentBooks[selectorIndex];
   const auto titleLines = renderer.wrappedText(UI_12_FONT_ID, centered.title.c_str(), titleMaxWidth, 2,
@@ -360,13 +377,13 @@ void CascadeTheme::drawButtonHints(GfxRenderer& renderer, const char* btn1, cons
   }
 
   const int slotWidth = pageWidth / 4;
-  const int lineHeight = renderer.getLineHeight(SMALL_FONT_ID);
-  const int textY = hintY + (hintHeight - lineHeight) / 2;
+  const int fontH = renderer.getFontAscenderSize(UI_10_FONT_ID);
+  const int textY = hintY - 6 + (hintHeight - fontH) / 2; // -8 manual adjustment
 
   for (int i = 0; i < 4; ++i) {
     if (ordered[i] == nullptr || ordered[i][0] == '\0') continue;
-    const int textWidth = renderer.getTextWidth(SMALL_FONT_ID, ordered[i]);
+    const int textWidth = renderer.getTextWidth(UI_10_FONT_ID, ordered[i]);
     const int textX = i * slotWidth + (slotWidth - textWidth) / 2;
-    renderer.drawText(SMALL_FONT_ID, textX, textY, ordered[i], true);
+    renderer.drawText(UI_10_FONT_ID, textX, textY, ordered[i], true);
   }
 }

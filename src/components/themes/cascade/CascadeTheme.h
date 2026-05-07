@@ -5,12 +5,12 @@
 namespace CascadeMetrics {
 constexpr ThemeMetrics values = [] {
   ThemeMetrics v = LyraMetrics::values;
-  v.homeCoverHeight = 280;
-  v.homeCoverTileHeight = 330;
+  v.homeCoverHeight = 340;
+  v.homeCoverTileHeight = 400;
   v.homeRecentBooksCount = 5;
   v.homeContinueReadingInMenu = false;
   v.homeCarouselMode = true;
-  v.homeMenuTopOffset = 80;
+  v.homeMenuTopOffset = 40;
   return v;
 }();
 }  // namespace CascadeMetrics
