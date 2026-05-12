@@ -279,15 +279,29 @@ void HomeActivity::render(RenderLock&&) {
   const auto pageHeight = renderer.getScreenHeight();
 
   renderer.clearScreen();
+
+  const int coverSelector = metrics.homeCarouselMode ? carouselIndex : selectorIndex;
+
+  // Guard against a race where the render task writes coverRendered=true after the button
+  // handler reset it to false (carousel changed during slow SD cover reads). If the stored
+  // cover is for a different index than the one we're about to display, force a re-render.
+  if (coverRenderedForIndex != coverSelector) {
+    coverRendered = false;
+    freeCoverBuffer();
+  }
+
   bool bufferRestored = coverBufferStored && restoreCoverBuffer();
 
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.homeTopPadding},
                  metrics.homeContinueReadingInMenu && !recentBooks.empty() ? recentBooks[0].title.c_str() : nullptr);
 
-  const int coverSelector = metrics.homeCarouselMode ? carouselIndex : selectorIndex;
   GUI.drawRecentBookCover(renderer, Rect{0, metrics.homeTopPadding, pageWidth, metrics.homeCoverTileHeight},
                           recentBooks, coverSelector, coverRendered, coverBufferStored, bufferRestored,
                           std::bind(&HomeActivity::storeCoverBuffer, this));
+
+  if (coverRendered) {
+    coverRenderedForIndex = coverSelector;
+  }
 
   // Build menu items dynamically
   std::vector<const char*> menuItems = {tr(STR_BROWSE_FILES), tr(STR_MENU_RECENT_BOOKS), tr(STR_FILE_TRANSFER),
