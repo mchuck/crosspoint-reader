@@ -105,54 +105,43 @@ void drawSlotBitmap(GfxRenderer& renderer, Bitmap& bitmap, const SlotGeom& g, in
 
   const int screenW = renderer.getScreenWidth();
   const int screenH = renderer.getScreenHeight();
-  const int innerX = anchorRight ? (g.x + g.w) : g.x;
-  const int outerX = anchorRight ? g.x : (g.x + g.w);
+  const int innerX = anchorRight ? (g.x + g.w) : g.x;  // full-height edge
+  const int outerX = anchorRight ? g.x : (g.x + g.w);  // tapered (short) edge
   const int outerTop = g.y + verticalTaper;
   const int outerBot = g.y + g.h - verticalTaper;
-  const int outerH = outerBot - outerTop;
 
-  for (int screenY = g.y; screenY < g.y + g.h; screenY++) {
-    if (screenY < 0 || screenY >= screenH) continue;
+  const int leftX = innerX < outerX ? innerX : outerX;
+  const int rightX = innerX < outerX ? outerX : innerX;
+  const int spanX = rightX - leftX;
+  const int dxShort = outerX - innerX;  // signed; |dxShort| == spanX
 
-    // Source V at the inner edge: linear over the full slot height. (Q16)
-    const int v_inner_q16 = (screenY - g.y) * 65536 / g.h;
-
-    // Outer edge X and source V at the outer edge. (Q16)
-    int scanOuterX;
-    int v_outer_q16;
-    if (screenY < outerTop) {
-      // Top diagonal: from inner top-corner to outer top-corner.
-      scanOuterX = innerX + (outerX - innerX) * (screenY - g.y) / verticalTaper;
-      v_outer_q16 = 0;
-    } else if (screenY > outerBot) {
-      // Bottom diagonal: from outer bottom-corner to inner bottom-corner.
-      scanOuterX = outerX + (innerX - outerX) * (screenY - outerBot) / verticalTaper;
-      v_outer_q16 = 65536;
-    } else {
-      // Middle: outer edge is vertical at outerX.
-      scanOuterX = outerX;
-      v_outer_q16 = outerH > 0 ? (screenY - outerTop) * 65536 / outerH : 32768;
-    }
-
-    const int scanLeft = anchorRight ? scanOuterX : innerX;
-    const int scanRight = anchorRight ? innerX : scanOuterX;
-    const int scanW = scanRight - scanLeft;
-    if (scanW <= 0) continue;
-
-    // V at the left and right boundaries of the scanline. (Q16)
-    const int v_left_q16 = anchorRight ? v_outer_q16 : v_inner_q16;
-    const int v_right_q16 = anchorRight ? v_inner_q16 : v_outer_q16;
-    const int dv_q16 = (v_right_q16 - v_left_q16) / scanW;
-
-    for (int screenX = scanLeft; screenX < scanRight; screenX++) {
+  // Column scan: both vertical quad edges sit at fixed x (innerX/outerX), so mapping image
+  // columns to screen columns keeps the image's left/right edges straight. Vertical extent
+  // per column shrinks linearly toward the short edge, foreshortening V (the perspective taper).
+  if (spanX > 0) {
+    for (int screenX = leftX; screenX < rightX; screenX++) {
       if (screenX < 0 || screenX >= screenW) continue;
-      const int xi = screenX - scanLeft;
-      const int bmpX = xi * bitmapW / scanW;
-      const int bmpY = (v_left_q16 + dv_q16 * xi) * bitmapH / 65536;
-      const int srcRow = bitmap.isTopDown() ? bmpY : (bitmapH - 1 - bmpY);
-      if (srcRow < 0 || srcRow >= bitmapH || bmpX < 0 || bmpX >= bitmapW) continue;
-      const uint8_t val = bitmapData[srcRow * outputRowBytes + bmpX / 4] >> (6 - (bmpX * 2) % 8) & 0x3;
-      if (val < 3) renderer.drawPixel(screenX, screenY);
+
+      // t: 0 at full-height edge, 1 at short edge. (Q16)
+      const int t_q16 = (screenX - innerX) * 65536 / dxShort;
+      const int taperOff = verticalTaper * t_q16 / 65536;
+      const int colTop = g.y + taperOff;
+      const int colBot = g.y + g.h - taperOff;
+      const int colH = colBot - colTop;
+      if (colH <= 0) continue;
+
+      // U maps screen-left -> image-left (no mirroring).
+      const int bmpX = (screenX - leftX) * bitmapW / spanX;
+      if (bmpX < 0 || bmpX >= bitmapW) continue;
+
+      for (int screenY = colTop; screenY < colBot; screenY++) {
+        if (screenY < 0 || screenY >= screenH) continue;
+        const int bmpY = (screenY - colTop) * bitmapH / colH;
+        const int srcRow = bitmap.isTopDown() ? bmpY : (bitmapH - 1 - bmpY);
+        if (srcRow < 0 || srcRow >= bitmapH) continue;
+        const uint8_t val = bitmapData[srcRow * outputRowBytes + bmpX / 4] >> (6 - (bmpX * 2) % 8) & 0x3;
+        if (val < 3) renderer.drawPixel(screenX, screenY);
+      }
     }
   }
 
