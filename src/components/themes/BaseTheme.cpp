@@ -1,6 +1,7 @@
 #include "BaseTheme.h"
 
 #include <GfxRenderer.h>
+#include <HalClock.h>
 #include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <Logging.h>
@@ -266,18 +267,31 @@ void BaseTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, 
   // Draw selection
   int contentWidth = rect.width - 5;
   if (selectedIndex >= 0) {
-    renderer.fillRect(0, rect.y + selectedIndex % pageItems * rowHeight - 2, rect.width, rowHeight);
+    renderer.fillRect(rect.x, rect.y + selectedIndex % pageItems * rowHeight - 2, rect.width, rowHeight);
   }
+  constexpr int maxValueWidth = 200;
+  constexpr int minValueGap = 10;
+
   // Draw all items
   const auto pageStartIndex = selectedIndex / pageItems * pageItems;
   for (int i = pageStartIndex; i < itemCount && i < pageStartIndex + pageItems; i++) {
     const int itemY = rect.y + (i % pageItems) * rowHeight;
-    int textWidth = contentWidth - BaseMetrics::values.contentSidePadding * 2 - (rowValue != nullptr ? 60 : 0);
 
-    // Draw name
+    int rowTextWidth = contentWidth - BaseMetrics::values.contentSidePadding * 2;
+    std::string valueText;
+    if (rowValue != nullptr) {
+      valueText = rowValue(i);
+      if (!valueText.empty()) {
+        int maxValW = std::max(0, rowTextWidth - 40 - minValueGap);
+        valueText = renderer.truncatedText(UI_10_FONT_ID, valueText.c_str(), maxValW);
+        int valueWidth = renderer.getTextWidth(UI_10_FONT_ID, valueText.c_str()) + minValueGap;
+        rowTextWidth -= valueWidth;
+      }
+    }
+
     auto itemName = rowTitle(i);
-    auto font = (rowSubtitle != nullptr) ? UI_12_FONT_ID : UI_10_FONT_ID;
-    auto item = renderer.truncatedText(font, itemName.c_str(), textWidth);
+    auto font = UI_10_FONT_ID;
+    auto item = renderer.truncatedText(font, itemName.c_str(), rowTextWidth);
     renderer.drawText(font, rect.x + BaseMetrics::values.contentSidePadding, itemY, item.c_str(), i != selectedIndex);
 
     // Apply checkerboard dither to create gray text effect for dimmed items
@@ -291,19 +305,22 @@ void BaseTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, 
     }
 
     if (rowSubtitle != nullptr) {
-      // Draw subtitle
       std::string subtitleText = rowSubtitle(i);
-      auto subtitle = renderer.truncatedText(UI_10_FONT_ID, subtitleText.c_str(), textWidth);
-      renderer.drawText(UI_10_FONT_ID, rect.x + BaseMetrics::values.contentSidePadding, itemY + 30, subtitle.c_str(),
-                        i != selectedIndex);
+      if (!subtitleText.empty()) {
+        auto subtitle = renderer.truncatedText(SMALL_FONT_ID, subtitleText.c_str(), rowTextWidth);
+        renderer.drawText(SMALL_FONT_ID, rect.x + BaseMetrics::values.contentSidePadding, itemY + 22, subtitle.c_str(),
+                          i != selectedIndex);
+      }
     }
 
-    if (rowValue != nullptr) {
-      // Draw value
-      std::string valueText = rowValue(i);
+    if (!valueText.empty()) {
       const auto valueTextWidth = renderer.getTextWidth(UI_10_FONT_ID, valueText.c_str());
+      int valueY = itemY;
+      if (rowSubtitle != nullptr) {
+        valueY = itemY + 10;
+      }
       renderer.drawText(UI_10_FONT_ID, rect.x + contentWidth - BaseMetrics::values.contentSidePadding - valueTextWidth,
-                        itemY, valueText.c_str(), i != selectedIndex);
+                        valueY, valueText.c_str(), i != selectedIndex);
     }
   }
 }
@@ -651,34 +668,57 @@ void BaseTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
 }
 
 Rect BaseTheme::drawPopup(const GfxRenderer& renderer, const char* message) const {
-  constexpr int margin = 15;
-  // Scale y position proportionally to screen height (7.5% from top)
-  const int y = static_cast<int>(renderer.getScreenHeight() * 0.075f);
-  const int textWidth = renderer.getTextWidth(UI_12_FONT_ID, message, EpdFontFamily::BOLD);
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int marginX = metrics.popupMarginX;
+  const int marginY = metrics.popupMarginY;
+  const int frameThickness = metrics.popupFrameThickness;
+  const EpdFontFamily::Style popupFontFamily = metrics.popupTextBold ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+  // Scale y position proportionally to screen height
+  const int y = static_cast<int>(renderer.getScreenHeight() * metrics.popupTopOffsetRatio);
+  const int textWidth = renderer.getTextWidth(UI_12_FONT_ID, message, popupFontFamily);
   const int textHeight = renderer.getLineHeight(UI_12_FONT_ID);
-  const int w = textWidth + margin * 2;
-  const int h = textHeight + margin * 2;
+  const int w = textWidth + marginX * 2;
+  const int h = textHeight + marginY * 2;
   const int x = (renderer.getScreenWidth() - w) / 2;
 
-  renderer.fillRect(x - 2, y - 2, w + 4, h + 4, true);  // frame thickness 2
-  renderer.fillRect(x, y, w, h, false);
+  const bool useRoundedPopup = metrics.popupCornerRadius > 0;
+  if (useRoundedPopup) {
+    renderer.fillRoundedRect(x - frameThickness, y - frameThickness, w + frameThickness * 2, h + frameThickness * 2,
+                             metrics.popupCornerRadius + frameThickness, Color::White);
+    renderer.fillRoundedRect(x, y, w, h, metrics.popupCornerRadius, Color::Black);
+  } else {
+    renderer.fillRect(x - frameThickness, y - frameThickness, w + frameThickness * 2, h + frameThickness * 2, true);
+    renderer.fillRect(x, y, w, h, false);
+  }
 
   const int textX = x + (w - textWidth) / 2;
-  const int textY = y + margin - 2;
-  renderer.drawText(UI_12_FONT_ID, textX, textY, message, true, EpdFontFamily::BOLD);
+  const int textY = y + marginY + metrics.popupTextBaselineOffsetY;
+  renderer.drawText(UI_12_FONT_ID, textX, textY, message, metrics.popupTextInverted, popupFontFamily);
   renderer.displayBuffer();
   return Rect{x, y, w, h};
 }
 
 void BaseTheme::fillPopupProgress(const GfxRenderer& renderer, const Rect& layout, const int progress) const {
-  constexpr int barHeight = 4;
-  const int barWidth = layout.width - 30;  // twice the margin in drawPopup to match text width
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int barHeight = metrics.popupProgressBarHeight;
+  const int barWidth =
+      std::max(0, layout.width - metrics.popupMarginX * 2);  // twice the margin in drawPopup to match text width
   const int barX = layout.x + (layout.width - barWidth) / 2;
-  const int barY = layout.y + layout.height - 10;
+  const int barY = layout.y + layout.height - metrics.popupMarginY / 2 - barHeight / 2 - 1;
+  if (barWidth <= 0 || barHeight <= 0) {
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+    return;
+  }
 
-  int fillWidth = barWidth * progress / 100;
+  const int scaledProgress = metrics.popupProgressClampPercent ? std::clamp(progress, 0, 100) : progress;
+  const int fillWidth = barWidth * scaledProgress / 100;
 
-  renderer.fillRect(barX, barY, fillWidth, barHeight, true);
+  if (metrics.popupProgressDrawOutline) {
+    renderer.drawRect(barX, barY, barWidth, barHeight, 1, metrics.popupProgressOutlineInverted);
+  }
+  if (fillWidth > 0) {
+    renderer.fillRect(barX, barY, fillWidth, barHeight, metrics.popupProgressFillInverted);
+  }
 
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }
@@ -742,6 +782,19 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
                         showBatteryPercentage);
   }
 
+  // Draw Clock (X3 only — DS3231 RTC)
+  int clockTextWidth = 0;
+  if (SETTINGS.statusBarClock && halClock.isAvailable()) {
+    char timeBuf[9];
+    if (halClock.formatTime(timeBuf, sizeof(timeBuf), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1)) {
+      clockTextWidth = renderer.getTextWidth(SMALL_FONT_ID, timeBuf);
+      // Position to the left of the progress text (with a small gap)
+      const int clockX = renderer.getScreenWidth() - metrics.statusBarHorizontalMargin - orientedMarginRight -
+                         progressTextWidth - (progressTextWidth > 0 ? 10 : 0) - clockTextWidth;
+      renderer.drawText(SMALL_FONT_ID, clockX, textY, timeBuf);
+    }
+  }
+
   // Draw Title
   if (!title.empty()) {
     textY -= textYOffset;
@@ -752,7 +805,8 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
 
     const int batterySize = SETTINGS.statusBarBattery ? (showBatteryPercentage ? 50 : 20) : 0;
     const int titleMarginLeft = batterySize + 30;
-    const int titleMarginRight = progressTextWidth + 30;
+    const int clockReserve = clockTextWidth > 0 ? (clockTextWidth + 10) : 0;
+    const int titleMarginRight = progressTextWidth + clockReserve + 30;
 
     // Attempt to center title on the screen, but if title is too wide then later we will center it within the
     // available space.
@@ -790,14 +844,14 @@ void BaseTheme::drawTextField(const GfxRenderer& renderer, Rect rect, const int 
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int lineHeight = renderer.getLineHeight(UI_12_FONT_ID);
   const int lineY = rect.y + rect.height + lineHeight + metrics.verticalSpacing;
-  const int thickness = cursorMode ? 3 : 1;
+  const int thickness = cursorMode ? metrics.textFieldCursorThickness : metrics.textFieldNormalThickness;
   if (contentWidth > 0) {
-    renderer.drawLine(rect.x + contentStartX, lineY, rect.x + contentStartX + contentWidth, lineY, thickness, true);
+    renderer.drawLine(rect.x + contentStartX, lineY,
+                      rect.x + contentStartX + contentWidth + metrics.textFieldLineEndOffset, lineY, thickness, true);
   } else {
-    const int hPadding = 6;
-    const int lineW = textWidth + hPadding * 2;
-    renderer.drawLine(rect.x + (rect.width - lineW) / 2, lineY, rect.x + (rect.width + lineW) / 2, lineY, thickness,
-                      true);
+    const int lineW = textWidth + metrics.textFieldHorizontalPadding * 2;
+    const int lineStart = rect.x + (rect.width - lineW) / 2;
+    renderer.drawLine(lineStart, lineY, lineStart + lineW + metrics.textFieldLineEndOffset, lineY, thickness, true);
   }
 }
 
@@ -806,6 +860,9 @@ void BaseTheme::drawKeyboardKey(const GfxRenderer& renderer, Rect rect, const ch
                                 const bool inactiveSelection) const {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int cr = metrics.keyboardKeyCornerRadius;
+  const bool isSpecialKey = keyType == KeyboardKeyType::Shift || keyType == KeyboardKeyType::Mode ||
+                            keyType == KeyboardKeyType::Del || keyType == KeyboardKeyType::Space ||
+                            keyType == KeyboardKeyType::Ok || keyType == KeyboardKeyType::Disabled;
 
   if (isSelected) {
     if (inactiveSelection) {
@@ -827,13 +884,31 @@ void BaseTheme::drawKeyboardKey(const GfxRenderer& renderer, Rect rect, const ch
         renderer.fillRect(rect.x, rect.y, rect.width, rect.height, true);
       }
     }
-  } else if (keyType == KeyboardKeyType::Shift || keyType == KeyboardKeyType::Mode || keyType == KeyboardKeyType::Del ||
-             keyType == KeyboardKeyType::Space || keyType == KeyboardKeyType::Ok ||
-             keyType == KeyboardKeyType::Disabled) {
-    if (cr > 0) {
-      renderer.drawRoundedRect(rect.x, rect.y, rect.width, rect.height, 1, cr, true);
-    } else {
-      renderer.drawRect(rect.x, rect.y, rect.width, rect.height);
+  } else {
+    if (metrics.keyboardFillUnselected) {
+      if (keyType == KeyboardKeyType::Disabled) {
+        if (cr > 0) {
+          renderer.fillRoundedRect(rect.x, rect.y, rect.width, rect.height, cr, Color::LightGray);
+        } else {
+          renderer.fillRectDither(rect.x, rect.y, rect.width, rect.height, Color::LightGray);
+        }
+      } else {
+        if (cr > 0) {
+          renderer.fillRoundedRect(rect.x, rect.y, rect.width, rect.height, cr, Color::White);
+        } else {
+          renderer.fillRect(rect.x, rect.y, rect.width, rect.height, false);
+        }
+      }
+    }
+
+    const bool shouldDrawOutline =
+        (metrics.keyboardDrawSpecialOutlineWhenUnselected && isSpecialKey) || metrics.keyboardOutlineAllUnselected;
+    if (shouldDrawOutline) {
+      if (cr > 0) {
+        renderer.drawRoundedRect(rect.x, rect.y, rect.width, rect.height, 1, cr, true);
+      } else {
+        renderer.drawRect(rect.x, rect.y, rect.width, rect.height);
+      }
     }
   }
 
@@ -851,12 +926,16 @@ void BaseTheme::drawKeyboardKey(const GfxRenderer& renderer, Rect rect, const ch
     const int centerX = rect.x + rect.width / 2;
     const int centerY = rect.y + rect.height / 2;
     const int arrowLen = rect.width / 4;
-    const int arrowHead = arrowLen / 2;
+    const int arrowHead = std::max(metrics.keyboardMinArrowHeadSize, arrowLen / 2);
     renderer.drawLine(centerX - arrowLen / 2, centerY, centerX + arrowLen / 2, centerY, 3, !invert);
     renderer.drawLine(centerX - arrowLen / 2, centerY, centerX - arrowLen / 2 + arrowHead, centerY - arrowHead, 3,
                       !invert);
     renderer.drawLine(centerX - arrowLen / 2, centerY, centerX - arrowLen / 2 + arrowHead, centerY + arrowHead, 3,
                       !invert);
+    return;
+  }
+
+  if (label == nullptr || label[0] == '\0') {
     return;
   }
 
@@ -869,6 +948,7 @@ void BaseTheme::drawKeyboardKey(const GfxRenderer& renderer, Rect rect, const ch
 
   if (hasSecondary) {
     const int secWidth = renderer.getTextWidth(SMALL_FONT_ID, secondaryLabel);
-    renderer.drawText(SMALL_FONT_ID, rect.x + rect.width - secWidth - 1, rect.y, secondaryLabel, !invert);
+    renderer.drawText(SMALL_FONT_ID, rect.x + rect.width - secWidth - metrics.keyboardSecondaryLabelRightPadding,
+                      rect.y + metrics.keyboardSecondaryLabelTopPadding, secondaryLabel, !invert);
   }
 }
