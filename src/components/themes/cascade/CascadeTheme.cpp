@@ -193,7 +193,7 @@ void CascadeTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect,
     const RecentBook& centerBook = recentBooks[selectorIndex];
     if (!centerBook.coverBmpPath.empty()) {
       const std::string centerPath = UITheme::getCoverThumbPath(centerBook.coverBmpPath, coverHeight);
-      FsFile cf;
+      HalFile cf;
       if (Storage.openFileForRead("HOME", centerPath, cf)) {
         Bitmap cb(cf);
         if (cb.parseHeaders() == BmpReaderError::Ok && cb.getWidth() > 0) {
@@ -233,7 +233,7 @@ void CascadeTheme::drawRecentBookCover(GfxRenderer& renderer, Rect rect,
 
       const std::string coverBmpPath =
           UITheme::getCoverThumbPath(book.coverBmpPath, CascadeMetrics::values.homeCoverHeight);
-      FsFile file;
+      HalFile file;
       if (!Storage.openFileForRead("HOME", coverBmpPath, file)) {
         const SlotGeom g = slotGeom(offset, centerX, 0, 0, actualCenterW, actualCenterH, rect.y);
         renderer.fillRect(g.x, g.y, g.w, g.h, false);
