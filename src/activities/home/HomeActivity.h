@@ -12,12 +12,15 @@ struct Rect;
 class HomeActivity final : public Activity {
   ButtonNavigator buttonNavigator;
   int selectorIndex = 0;
+  int carouselIndex = 0;
+  int menuSelectorIndex = 0;
   bool recentsLoading = false;
   bool recentsLoaded = false;
   bool firstRenderDone = false;
   bool hasOpdsServers = false;
   bool coverRendered = false;      // Track if cover has been rendered once
   bool coverBufferStored = false;  // Track if cover buffer is stored
+  int coverRenderedForIndex = -1;  // carouselIndex that was used to render the stored cover
   uint8_t* coverBuffer = nullptr;  // HomeActivity's own buffer for cover image
   size_t coverBufferSize = 0;      // Bytes allocated to coverBuffer
   // Logical rect last passed to drawRecentBookCover. The cover snapshot only

@@ -49,6 +49,7 @@ struct ThemeMetrics {
   int homeCoverTileHeight;
   int homeRecentBooksCount;
   bool homeContinueReadingInMenu;
+  bool homeCarouselMode;
   int homeMenuTopOffset;
 
   int buttonHintsHeight;
@@ -125,6 +126,7 @@ constexpr ThemeMetrics values = {.batteryWidth = 15,
                                  .homeCoverTileHeight = 400,
                                  .homeRecentBooksCount = 1,
                                  .homeContinueReadingInMenu = false,
+                                 .homeCarouselMode = false,
                                  .homeMenuTopOffset = 10,
                                  .buttonHintsHeight = 40,
                                  .sideButtonHintsWidth = 30,
